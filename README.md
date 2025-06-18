@@ -238,11 +238,6 @@ docker-compose exec redis redis-cli
 - **Connection pooling**: Configure in database settings
 - **Rate limiting**: Adjust nginx and Redis rate limits
 
-## License
-
-[Add your license here]
-
-
 ## Support
 
 For issues and questions:
