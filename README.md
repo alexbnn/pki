@@ -131,11 +131,7 @@ DELETE /api/users/delete/{username}
 - **scep-server**: SCEP protocol implementation for device enrollment
 
 ### Data Persistence
-All data is stored in local folders for easy backup and management:
-- `./easyrsa-pki`: PKI certificates and keys
-- `./postgres-data`: User database
-- `./redis-data`: Session cache
-- `./logs`: Application logs
+All data is stored in Docker Volumes
 
 ### Security Features
 - **HTTPS enforcement** with self-signed certificates
@@ -213,14 +209,6 @@ docker-compose exec postgres psql -U pkiuser -d pkiauth
 docker-compose exec redis redis-cli
 ```
 
-## Monitoring & Troubleshooting
-
-### Log Locations
-- **Application logs**: `./logs/app.log`
-- **Nginx logs**: `./logs/access.log`, `./logs/error.log`
-- **EasyRSA logs**: `./logs/easyrsa/`
-- **Audit logs**: Database table `audit_logs`
-
 ### Common Issues
 1. **Port conflicts**: Ensure ports 80, 443, 5432, 6379, 8080, 8090 are available
 2. **Permission errors**: Check Docker daemon permissions
@@ -236,7 +224,7 @@ docker-compose exec redis redis-cli
 ## Support
 
 For issues and questions:
-- Check the logs in `./logs/` directory
+- Check the logs in the Docker Volume
 - Review health check endpoints
 - Examine container status with `docker-compose ps`
 - Check database connectivity and initialization
