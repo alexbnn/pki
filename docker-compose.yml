@@ -1,0 +1,219 @@
+services:
+  web-interface:
+    build: .
+    # ports:
+    #   - "5050:5000"  # Port exposure handled by nginx
+    environment:
+      # EasyRSA Container Connection
+      - TERMINAL_CONTAINER_URL=http://easyrsa-container:8080
+      - TERMINAL_ENDPOINT=/execute
+      - REQUEST_TIMEOUT=300
+      
+      # Security Settings
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
+      - AUTHENTICATION_ENABLED=true
+      - MULTI_USER_MODE=true
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD_HASH=admin
+      
+      # Flask Settings
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      
+      # Rate Limiting (requires Redis)
+      - RATELIMIT_STORAGE_URL=redis://redis:6379
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+      # Database Settings
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-pkiuser}:${POSTGRES_PASSWORD:-pkipass}@postgres:5432/${POSTGRES_DB:-pkiauth}
+      
+    depends_on:
+      - easyrsa-container
+      - redis
+      - postgres
+    networks:
+      - easyrsa-network
+    restart: unless-stopped
+    volumes:
+      # Persist logs
+      - web_logs:/app/logs
+      # Optional: Mount SSL certificates for HTTPS
+      - ./ssl:/app/ssl:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  easyrsa-container:
+    build: ./terminal-program
+    ports:
+      - "8080:8080"  # Expose for direct access if needed
+    networks:
+      - easyrsa-network
+    restart: unless-stopped
+    volumes:
+      # Persist PKI data so certificates aren't lost on container restart
+      - easyrsa-pki:/app
+      # Persist logs
+      - easyrsa_logs:/app/logs
+      # Optional: Mount configuration files
+      - ./easyrsa-config:/app/config:ro
+    environment:
+      # EasyRSA environment variables
+      - EASYRSA_PKI=/app
+      - EASYRSA_BATCH=1
+      
+      # Default certificate values (can be overridden via API)
+      - EASYRSA_REQ_COUNTRY=${EASYRSA_REQ_COUNTRY:-US}
+      - EASYRSA_REQ_PROVINCE=${EASYRSA_REQ_PROVINCE:-California}
+      - EASYRSA_REQ_CITY=${EASYRSA_REQ_CITY:-San Francisco}
+      - EASYRSA_REQ_ORG=${EASYRSA_REQ_ORG:-My Organization}
+      - EASYRSA_REQ_EMAIL=${EASYRSA_REQ_EMAIL:-admin@myorg.com}
+      - EASYRSA_REQ_OU=${EASYRSA_REQ_OU:-IT Department}
+      
+      # Certificate validity periods
+      - EASYRSA_CA_EXPIRE=${EASYRSA_CA_EXPIRE:-3650}
+      - EASYRSA_CERT_EXPIRE=${EASYRSA_CERT_EXPIRE:-365}
+      
+      # Cryptographic settings
+      - EASYRSA_KEY_SIZE=${EASYRSA_KEY_SIZE:-2048}
+      - EASYRSA_DIGEST=${EASYRSA_DIGEST:-sha256}
+      
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # Redis for rate limiting and caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"  # Expose for monitoring if needed
+    networks:
+      - easyrsa-network
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+
+  # SCEP Server for device certificate enrollment
+  scep-server:
+    build: ./scep-server
+    ports:
+      - "8090:8090"  # SCEP server port
+    networks:
+      - easyrsa-network
+    restart: unless-stopped
+    depends_on:
+      - easyrsa-container
+    volumes:
+      # Persist logs
+      - scep_logs:/app/logs
+    environment:
+      # EasyRSA Container Connection
+      - EASYRSA_CONTAINER_URL=http://easyrsa-container:8080
+      
+      # SCEP Configuration
+      - SCEP_CA_IDENTIFIER=${SCEP_CA_IDENTIFIER:-pkiclient}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      
+      # Flask Settings
+      - FLASK_ENV=production
+      - FLASK_APP=scep_server.py
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # Nginx reverse proxy for HTTPS termination and security
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"    # HTTP (redirects to HTTPS)
+      - "443:443"  # HTTPS 
+      - "8081:8080" # Nginx status/monitoring
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - logs:/var/log/nginx
+    depends_on:
+      - web-interface
+    networks:
+      - easyrsa-network
+    restart: unless-stopped
+
+  # PostgreSQL database for user authentication and permissions
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-pkiauth}
+      - POSTGRES_USER=${POSTGRES_USER:-pkiuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-pkipass}
+    ports:
+      - "5432:5432"  # Expose for external access if needed
+    networks:
+      - easyrsa-network
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/02-initial-data.sql:/docker-entrypoint-initdb.d/02-initial-data.sql:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+volumes:
+  postgres-data:
+
+  logs:
+
+  scep_logs:
+
+  redis-data:
+
+  easyrsa-pki:
+
+  easyrsa_logs:
+
+  web_logs:
+
+
+
+
+
+
+
+
+networks:
+  easyrsa-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
