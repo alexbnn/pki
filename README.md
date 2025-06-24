@@ -48,17 +48,12 @@ git clone <repository-url>
 cd ca_3.0
 ```
 
-2. **Run the setup script**:
-```bash
-./setup.sh
-```
-
-3. **Start the services**:
+2. **Start the services**:
 ```bash
 docker-compose up -d
 ```
 
-4. **Access the web interface**:
+3. **Access the web interface**:
    - **HTTPS**: https://localhost (recommended)
    - **HTTP**: http://localhost (redirects to HTTPS)
 
