@@ -45,7 +45,7 @@ A containerized Public Key Infrastructure (PKI) management system that provides 
 1. **Clone the repository**:
 ```bash
 git clone <repository-url>
-cd ca_3.0
+cd pki
 ```
 
 2. **Start the services**:
